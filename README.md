@@ -94,4 +94,7 @@ load(S, ClassLoadingStrategy<S extends ClassLoader>)
    选择 INJECTION：当你希望动态生成的类与现有类共享类加载器，避免类隔离时。
    选择 WRAPPER：当需要类隔离，或避免干扰现有类时，适合使用。
    选择 CHILD_FIRST：在解决类加载冲突或实现插件机制时，较为合适。
-  
+
+bytebuddy的使用示例请看测试用例 ByteBuddyTest.java, 里面包含了所有常见的方法使用,
+推荐写得最全的文章： https://www.cnblogs.com/crazymakercircle/p/16635330.html#autoid-h2-12-3-0
+推荐视频教程：https://www.bilibili.com/video/BV1G24y1a7bd?spm_id_from=333.788.player.switch&vd_source=bd99477a13c4939885a67f476eed959a&p=11

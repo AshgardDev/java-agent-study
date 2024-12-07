@@ -7,13 +7,24 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.dynamic.DynamicType;
 import net.bytebuddy.implementation.FieldAccessor;
 import net.bytebuddy.implementation.FixedValue;
+import net.bytebuddy.implementation.MethodDelegation;
+import net.bytebuddy.implementation.SuperMethodCall;
+import net.bytebuddy.implementation.bind.annotation.Morph;
 import net.bytebuddy.matcher.ElementMatchers;
+import org.example.interceptor.ConstructorInterceptor5;
+import org.example.interceptor.SelectUserNameInterceptor3;
+import org.example.interceptor.SelectUserNameInterceptor4;
+import org.example.interceptor.StaticMethodInterceptor6;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+
+import static net.bytebuddy.matcher.ElementMatchers.isStatic;
+import static net.bytebuddy.matcher.ElementMatchers.named;
 
 public class ByteBuddyTest {
 
@@ -92,9 +103,11 @@ public class ByteBuddyTest {
     public void testModifyMethod() throws Exception {
         ByteBuddy byteBuddy = new ByteBuddy();
         // unloaded表示生成的字节码还没加载到jvm
-        DynamicType.Unloaded<ByteBuddyDemoService> unloaded = byteBuddy.subclass(ByteBuddyDemoService.class)
+        DynamicType.Unloaded<ByteBuddyDemoService> unloaded = byteBuddy
+                .subclass(ByteBuddyDemoService.class)
+                .name("org.example.SubClassByteBuddyDemoServiceModifyMethod")
                 // 拦截toString方法
-                .method(ElementMatchers.named("toString"))
+                .method(named("toString"))
                 // 指定拦截到方法后的操作
                 // FixedValue是指拦截后返回固定指hello
                 .intercept(FixedValue.value("hello"))
@@ -134,20 +147,20 @@ public class ByteBuddyTest {
                 // idea->view->Show Bytecode
                 // 可以看到方法变成私有，且方法名变成private selectUserName$original$OOaFYyAH
                 .rebase(ByteBuddyDemoService.class)
-                .name("org.example.RebaseByteBuddyDemoService")
+                .name("org.example.RebaseByteBuddyDemoServiceModifyType")
                 // 拦截print
-                .method(ElementMatchers.named("print"))
+                .method(named("print"))
                 .intercept(FixedValue.value("hello"))
 
                 //拦截selectUserName
                 .method(
-                        ElementMatchers.named("selectUserName")
+                        named("selectUserName")
                                 .and(ElementMatchers.returns(String.class))
                                 .and(ElementMatchers.takesArguments(1)))
                 .intercept(FixedValue.nullValue())
 
                 // 拦截saveUser
-                .method(ElementMatchers.named("saveUser")
+                .method(named("saveUser")
                         .and(ElementMatchers.returns(void.class))
                 )
                 .intercept(FixedValue.value(TypeDescription.ForLoadedType.of(void.class)))
@@ -160,7 +173,7 @@ public class ByteBuddyTest {
     }
 
     /**
-     * 测试创建新方法
+     * 测试创建新方法 包括get set方法
      *
      * @throws Exception
      */
@@ -168,7 +181,7 @@ public class ByteBuddyTest {
     public void testCreateMethod() throws Exception {
         DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
                 .rebase(ByteBuddyDemoService.class)
-                .name("org.example.RebaseByteBuddyDemoServiceWithNewMethod")
+                .name("org.example.RebaseByteBuddyDemoServiceWithCreateMethod")
                 // 创建一个实例方法
                 // 包括方法的名字、返回值、访问权限
                 .defineMethod("newUser", String.class, Modifier.PUBLIC)
@@ -197,7 +210,7 @@ public class ByteBuddyTest {
     public void testCreateField() throws Exception {
         DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
                 .rebase(ByteBuddyDemoService.class)
-                .name("org.example.RebaseByteBuddyDemoServiceWithNewField")
+                .name("org.example.RebaseByteBuddyDemoServiceWithCreateField")
                 // 创建一个实例字段,这个方法的value是不会真正生效的，因为对象实例的属性赋值动作，其实是在对象建立后，才会设置到对象上的
                 // 普通对象实例的field，是没办法直接设置的，但也有解决办法，就是通过构造函数来设置
                 // 创建一个字段，并设置初始值， --不会生效
@@ -222,15 +235,149 @@ public class ByteBuddyTest {
                 .withParameter(String.class, "name")
                 .intercept(FieldAccessor.ofField("name").setsArgumentAt(0))
 
+                // 定义一个text字段,并实现set和get接口
+                .defineField("text", String.class, Visibility.PUBLIC)
+                .implement(ByteBuddyInterface.class)
+                .intercept(FieldAccessor.ofField("text"))
+
                 .make();
 
         unloaded.saveIn(new File(path));
         DynamicType.Loaded<ByteBuddyDemoService> load = unloaded.load(ClassLoader.getSystemClassLoader());
 
         // 创建对象实例并传递构造函数参数
-        Object obj = load.getLoaded().getDeclaredConstructor().newInstance();
+        Object obj = load.getLoaded().newInstance();
         for (Field field : obj.getClass().getFields()) {
             System.out.println("field = " + field.getName() + ", value=" + field.get(obj));
         }
+    }
+
+    /**
+     * 测试方法委托
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testMethodDelegation() throws Exception {
+        DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
+                .rebase(ByteBuddyDemoService.class)
+                .name("org.example.RebaseByteBuddyDemoServiceWithMethodDelegation")
+                .method(named("selectUserName").and(ElementMatchers.takesArguments(1).and(ElementMatchers.returns(String.class))))
+                //.intercept(FixedValue.value("delegate"))
+
+                // 分多种情况讨论
+                // 1.拦截的是普通方法
+                // 拦截的类实例只有一个方法，则必选用这个方法，即使方法签名完全不一样
+                // 拦截的类实例有多个方法
+                //    优先根据返回值类型匹配方法，返回值一样，
+                //       只有一个方法，则采用该方法
+                //       有多个方法，根据参数匹配，参数完全一样的，则用该方法
+                //          参数不匹配，根据方法名匹配，方法名一样，则用该方法
+                //          都不匹配，报错模糊方法(这里情况非常复杂，没列举全，先这么理解，正常也不会写不一样的匹配)
+                // .intercept(MethodDelegation.to(new ByteBuddyMethodDelegation()))
+
+                // 2.拦截的是静态方法
+                // 静态方法，没有实例，所以委托方法必须是静态的！否则，报错None of [] allows for delegation ...
+                // 其他匹配规则，参考普通方法的匹配规则
+                //.intercept(MethodDelegation.to(ByteBuddyMethodDelegation.class))
+
+                // 3.指定注解@RuntimeType，主要用于方法委托（Method Delegation）时指定目标方法的返回值和参数的运行时动态类型检查
+                // 一.动态返回类型匹配： 当目标方法的返回类型无法在编译时静态确定，或者需要与原始方法不一致时，@RuntimeType 允许在运行时确定返回类型。
+                // 二.动态参数类型匹配： 对于方法参数，如果方法委托需要接受不同类型的参数（如从 Object 到具体类型），@RuntimeType 可以让 Byte Buddy 在运行时处理类型转换。
+                // .intercept(MethodDelegation.to(ByteBuddyMethodDelegation.class))
+
+                // 这里的匹配方法很乱，所以我们一般规范使用，约定如下：
+                // 1.当传入的是实例时，，一般方法签名要完全保持一致--对应SelectUserNameInterceptor1
+                // 2.当传入的是类时，一般方法签名要完全保持一致，且方法必须是静态的--对应SelectUserNameInterceptor2
+                // 3.除上面的约束外，还可以通过注解@RuntimeType来指定，此时，方法签名才允许保持不一致--对应SelectUserNameInterceptor3
+                // .intercept(MethodDelegation.to(new SelectUserNameInterceptor1()))
+                // .intercept(MethodDelegation.to(SelectUserNameInterceptor2.class))
+                .intercept(MethodDelegation.to(new SelectUserNameInterceptor3()))
+                .make();
+
+        unloaded.saveIn(new File(path));
+        DynamicType.Loaded<ByteBuddyDemoService> load = unloaded.load(ClassLoader.getSystemClassLoader());
+
+        // 创建对象实例并传递构造函数参数
+        Object obj = load.getLoaded().newInstance();
+        for (Method method : obj.getClass().getMethods()) {
+            if (method.getName().equals("selectUserName")) {
+                System.out.println("selectUserName(100L) = " + method.invoke(obj, 100L));
+            }
+        }
+    }
+
+    /**
+     * 测试方法委托时，动态修改入参
+     * 1.必须先声明一个接口，用于覆盖原有的callback方法
+     * 2.必须在方法委托的时候，绑定binder，表示在拦截方法中注入@Morph对应的回调
+     * 3.在拦截方法中，通过@Morph注解，获取到对应的回调，并调用其call方法，传入参数
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testMethodDelegationMorph() throws Exception {
+        DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
+                .rebase(ByteBuddyDemoService.class)
+                .name("org.example.RebaseByteBuddyDemoServiceWithMethodDelegationMorph")
+                .method(named("selectUserName").and(ElementMatchers.takesArguments(1).and(ElementMatchers.returns(String.class))))
+                // 修改委托方法，注入自定义的回调类，这样才能动态修改参数
+                .intercept(MethodDelegation.withDefaultConfiguration()
+                        .withBinders(Morph.Binder.install(OverrideCallback.class))
+                        .to(new SelectUserNameInterceptor4())
+                )
+                .make();
+
+        unloaded.saveIn(new File(path));
+        DynamicType.Loaded<ByteBuddyDemoService> load = unloaded.load(ClassLoader.getSystemClassLoader());
+
+        // 创建对象实例并传递构造函数参数
+        Object obj = load.getLoaded().newInstance();
+        for (Method method : obj.getClass().getMethods()) {
+            if (method.getName().equals("selectUserName")) {
+                System.out.println("selectUserName(100L) = " + method.invoke(obj, 100L));
+            }
+        }
+    }
+
+    /**
+     * 测试修改构造函数
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testModifyConstructor() throws Exception {
+        DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
+                .rebase(ByteBuddyDemoService.class)
+                .name("org.example.RebaseByteBuddyDemoServiceWithModifyConstructor")
+                .constructor(ElementMatchers.takesArguments(1))
+                // 这里必须要指定为SuperMethodCall，否则，会报错，因为要先调用父类的构造方法或者变基后的构造方法
+                .intercept(SuperMethodCall.INSTANCE.andThen(MethodDelegation.to(new ConstructorInterceptor5())))
+                .make();
+
+        unloaded.saveIn(new File(path));
+        DynamicType.Loaded<ByteBuddyDemoService> load = unloaded.load(ClassLoader.getSystemClassLoader());
+
+        // 创建对象实例并传递构造函数参数
+        Object obj = load.getLoaded().getDeclaredConstructor(String.class).newInstance("hbj");
+        for (Method method : obj.getClass().getMethods()) {
+            if (method.getName().equals("selectUserName")) {
+                System.out.println("selectUserName(100L) = " + method.invoke(obj, 100L));
+            }
+        }
+    }
+
+    @Test
+    public void testModifyStaticMethod() throws Exception {
+        DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
+                .rebase(ByteBuddyDemoService.class)
+                .name("org.example.RebaseByteBuddyDemoServiceWithModifyStaticMethod")
+                .method(named("testStaticMethod").and(isStatic()))
+                .intercept(MethodDelegation.to(new StaticMethodInterceptor6()))
+                .make();
+
+        unloaded.saveIn(new File(path));
+        DynamicType.Loaded<ByteBuddyDemoService> load = unloaded.load(ClassLoader.getSystemClassLoader());
+        load.getLoaded().getDeclaredMethod("testStaticMethod").invoke(null);
     }
 }
