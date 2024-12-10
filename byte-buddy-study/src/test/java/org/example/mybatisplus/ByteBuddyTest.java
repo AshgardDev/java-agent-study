@@ -1,20 +1,22 @@
-package org.example;
+package org.example.mybatisplus;
 
+import cn.hutool.core.io.FileUtil;
 import jdk.internal.org.objectweb.asm.Opcodes;
 import net.bytebuddy.ByteBuddy;
+import net.bytebuddy.ClassFileVersion;
 import net.bytebuddy.description.modifier.Visibility;
 import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.dynamic.ClassFileLocator;
 import net.bytebuddy.dynamic.DynamicType;
-import net.bytebuddy.implementation.FieldAccessor;
-import net.bytebuddy.implementation.FixedValue;
-import net.bytebuddy.implementation.MethodDelegation;
-import net.bytebuddy.implementation.SuperMethodCall;
+import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
+import net.bytebuddy.implementation.*;
 import net.bytebuddy.implementation.bind.annotation.Morph;
 import net.bytebuddy.matcher.ElementMatchers;
-import org.example.interceptor.ConstructorInterceptor5;
-import org.example.interceptor.SelectUserNameInterceptor3;
-import org.example.interceptor.SelectUserNameInterceptor4;
-import org.example.interceptor.StaticMethodInterceptor6;
+import net.bytebuddy.pool.TypePool;
+import org.example.mybatisplus.interceptor.ConstructorInterceptor5;
+import org.example.mybatisplus.interceptor.SelectUserNameInterceptor3;
+import org.example.mybatisplus.interceptor.SelectUserNameInterceptor4;
+import org.example.mybatisplus.interceptor.StaticMethodInterceptor6;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -22,9 +24,10 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.net.URL;
+import java.net.URLClassLoader;
 
-import static net.bytebuddy.matcher.ElementMatchers.isStatic;
-import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.*;
 
 public class ByteBuddyTest {
 
@@ -156,7 +159,7 @@ public class ByteBuddyTest {
                 .method(
                         named("selectUserName")
                                 .and(ElementMatchers.returns(String.class))
-                                .and(ElementMatchers.takesArguments(1)))
+                                .and(takesArguments(1)))
                 .intercept(FixedValue.nullValue())
 
                 // 拦截saveUser
@@ -262,7 +265,7 @@ public class ByteBuddyTest {
         DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
                 .rebase(ByteBuddyDemoService.class)
                 .name("org.example.RebaseByteBuddyDemoServiceWithMethodDelegation")
-                .method(named("selectUserName").and(ElementMatchers.takesArguments(1).and(ElementMatchers.returns(String.class))))
+                .method(named("selectUserName").and(takesArguments(1).and(ElementMatchers.returns(String.class))))
                 //.intercept(FixedValue.value("delegate"))
 
                 // 分多种情况讨论
@@ -320,7 +323,7 @@ public class ByteBuddyTest {
         DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
                 .rebase(ByteBuddyDemoService.class)
                 .name("org.example.RebaseByteBuddyDemoServiceWithMethodDelegationMorph")
-                .method(named("selectUserName").and(ElementMatchers.takesArguments(1).and(ElementMatchers.returns(String.class))))
+                .method(named("selectUserName").and(takesArguments(1).and(ElementMatchers.returns(String.class))))
                 // 修改委托方法，注入自定义的回调类，这样才能动态修改参数
                 .intercept(MethodDelegation.withDefaultConfiguration()
                         .withBinders(Morph.Binder.install(OverrideCallback.class))
@@ -350,7 +353,7 @@ public class ByteBuddyTest {
         DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
                 .rebase(ByteBuddyDemoService.class)
                 .name("org.example.RebaseByteBuddyDemoServiceWithModifyConstructor")
-                .constructor(ElementMatchers.takesArguments(1))
+                .constructor(takesArguments(1))
                 // 这里必须要指定为SuperMethodCall，否则，会报错，因为要先调用父类的构造方法或者变基后的构造方法
                 .intercept(SuperMethodCall.INSTANCE.andThen(MethodDelegation.to(new ConstructorInterceptor5())))
                 .make();
@@ -367,10 +370,23 @@ public class ByteBuddyTest {
         }
     }
 
+    /**
+     * 测试静态方法
+     * ps：这里要学的知识点是是否可以使用redefine 和 subclass
+     * subclass是继承，但静态方法是不可继承的，所以superCall是不行的，因此，subclass不行
+     * redefine是重写，是对原有方法进行覆盖，也就是原有的方法没有了，那supercall当然也是没有的，因此也不行
+     * 所以对静态方法拦截，只能用rebase
+     *
+     * @throws Exception
+     */
     @Test
     public void testModifyStaticMethod() throws Exception {
         DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
                 .rebase(ByteBuddyDemoService.class)
+                // 原始方法没有保留
+                //.redefine(ByteBuddyDemoService.class)
+                // 静态方法不能继承
+                //.subclass(ByteBuddyDemoService.class)
                 .name("org.example.RebaseByteBuddyDemoServiceWithModifyStaticMethod")
                 .method(named("testStaticMethod").and(isStatic()))
                 .intercept(MethodDelegation.to(new StaticMethodInterceptor6()))
@@ -379,5 +395,138 @@ public class ByteBuddyTest {
         unloaded.saveIn(new File(path));
         DynamicType.Loaded<ByteBuddyDemoService> load = unloaded.load(ClassLoader.getSystemClassLoader());
         load.getLoaded().getDeclaredMethod("testStaticMethod").invoke(null);
+    }
+
+    /***
+     * 测试类加载器
+     * @throws Exception
+     */
+    @Test
+    public void testClassLoader() throws Exception {
+        DynamicType.Unloaded<ByteBuddyDemoService> unloaded = new ByteBuddy()
+                .rebase(ByteBuddyDemoService.class)
+                .name("org.example.RebaseByteBuddyDemoServiceWithClassLoader")
+                .make();
+
+        DynamicType.Loaded<ByteBuddyDemoService> loader;
+        // 默认策略，是采用appClassLoader的子类加载器加载ByteArrayClassLoader
+        loader = unloaded.load(ClassLoader.getSystemClassLoader());
+        // 同默认加载器策略一样
+        //loader = unloaded.load(ClassLoader.getSystemClassLoader(), ClassLoadingStrategy.Default.WRAPPER);
+        // 注入到第一参数指定的类加载器，当前即注入appClassLoader
+        loader = unloaded.load(ClassLoader.getSystemClassLoader(), ClassLoadingStrategy.Default.INJECTION);
+        // 打破双亲委派机制，优先查找子类加载器是否加载，此时一般不报类已经加载错误，因为子类加载器没有加载过该类
+        //loader = unloaded.load(ClassLoader.getSystemClassLoader(), ClassLoadingStrategy.Default.CHILD_FIRST);
+
+        Class<?> loaded = loader.getLoaded();
+        System.out.println("loaded = " + loaded);
+    }
+
+    /**
+     * 测试类加载器定位路径
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testClassLoaderLocator() throws Exception {
+        // 类文件定位器
+        // ForCLassLoader:获取指定类加载器加载的类 -- 这里指定了系统类加载器，可以加载类加载器已经加载的类（包括父类能加载到的！）
+        ClassFileLocator classFileLocator1 = ClassFileLocator.ForClassLoader.of(ClassLoader.getSystemClassLoader());
+        byte[] resolve11 = classFileLocator1.locate("org.example.ByteBuddyDemoService").resolve();
+        FileUtil.writeBytes(resolve11, new File(path + "/hbj/org/example/ByteBuddyDemoService.class"));
+        // 能加载父类的吗？？(哦呵，可以按双亲委派机制查找定位到类，加载字节码哦)
+        byte[] resolve12 = classFileLocator1.locate("java.lang.String").resolve();
+        FileUtil.writeBytes(resolve12, new File(path + "/hbj/org/example/String.class"));
+        try {
+            Class<?> loadedCls = Class.forName("org.example.mybatisplus.ByteBuddyDemoService");
+            System.out.println("类加载到了，我真是个小聪明：" + loadedCls);
+
+            Class<?> loadedCls2 = Class.forName("java.lang.String");
+            System.out.println("类加载到了，我真是个小聪明：" + loadedCls2);
+        } catch (Exception e) {
+            System.out.println("类没找到，真是武则天当寡妇，失去理智啊");
+        }
+
+        // ForJarLocator: Jar文件定位器，可以定位jar中的类，还没加载到类加载器中，只是二进制码或者说.class文件
+        ClassFileLocator classFileLocator2 = ClassFileLocator.ForJarFile.of(new File("/Users/hbj/.m2/repository/commons-io/commons-io/2.6/commons-io-2.6.jar"));
+        byte[] resolve21 = classFileLocator2.locate("org.apache.commons.io.FileUtils").resolve();
+        FileUtil.writeBytes(resolve21, new File(path + "/hbj/org/apache/commons/io/FileUtils.class"));
+        try {
+            Class<?> loadedCls = Class.forName("org.apache.commons.io.FileUtils");
+            System.out.println("类加载到了，真是小刀喇屁股，开眼了：" + loadedCls);
+        } catch (Exception e) {
+            System.out.println("类没找到，还没被加载到jvm中，预料之中");
+        }
+
+        // ForFolder: 文件夹定位器，可以定位文件夹中的类，还没加载到类加载器中，只是二进制码或者说.class文件
+        // 这里要注意，包名最后会转成对应的路径
+        ClassFileLocator classFileLocator3 = ClassFileLocator.ForFolder.of(new File("/Users/hbj/Study/java-agent-study/byte-buddy-study/tmp/classes/hbj/"), ClassFileVersion.ofThisVm());
+        byte[] resolve31 = classFileLocator3.locate("org.apache.commons.io.FileUtils").resolve();
+        FileUtil.writeBytes(resolve31, new File(path + "/hbj2/org/apache/commons/io/FileUtils.class"));
+
+        // 其他加载方式让他去吧，这些够用了
+    }
+
+    /**
+     * 测试类型描述
+     * PS：
+     * Byte Buddy 本身无法直接从 ClassFileLocator.Compound 加载类到 JVM 中。
+     * ClassFileLocator 的职责是定位类文件（或字节码），而类的加载需要通过 ClassLoader 实现。
+     * 因此，ClassFileLocator.Compound 提供了定位功能，加载功能则需要结合 ClassLoader 或 Byte Buddy 提供的 DynamicType 和 ClassLoadingStrategy。
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testTypeDescription() throws Exception {
+        // 现在问题来了，从测试类文件定位器，我们已经加载到类文件的二进制字节码了，我怎么用ByteBuddy去加载和修改呢？？
+        // 我们知道有三种方式来重写类，subclass,redefine,rebase,
+        // 这三种方式其实都是通过TypeDescription来描述类信息的，这个也是ByteBuddy提供的类的描述方式
+        // subclass(TypeDescription type)
+        // redefine(TypeDescription type, ClassFileLocator classFileLocator)
+        // rebase(TypeDescription type, ClassFileLocator classFileLocator)
+        File jarFIle = new File("/Users/hbj/.m2/repository/commons-io/commons-io/2.17.0/commons-io-2.17.0.jar");
+        try (
+                ClassFileLocator systemClassLoaderLocator = ClassFileLocator.ForClassLoader.ofSystemLoader();
+                // 和上面的写法等价，但下面的写法可以自己指定classloader
+                // ClassFileLocator systemClassLoaderLocator = ClassFileLocator.ForClassLoader.of(ClassLoader.getSystemClassLoader());
+                ClassFileLocator jarFileLocator = ClassFileLocator.ForJarFile.of(jarFIle);
+                // 组合类的类文件定位器
+                // 这里要说明一下为啥要进行组合？
+                // 因为，如果指定类文件定位器，则只会在类文件的定位器里，搜索类信息，所以是加载不到系统类信息的，比如Object等，所以要一般要将系统类定位器加入进来，进行组合
+                ClassFileLocator compound = new ClassFileLocator.Compound(jarFileLocator, systemClassLoaderLocator);
+        ) {
+            TypePool typePool = TypePool.Default.of(compound);
+            // describe并不会触发类的加载
+            TypeDescription typeDescription = typePool.describe("org.apache.commons.io.FileUtils").resolve();
+
+            DynamicType.Unloaded<Object> unloaded = new ByteBuddy()
+                    .redefine(typeDescription, compound)
+                    .name("org.apache.commons.io.MyFileUtils")
+                    .method(named("sizeOf"))
+                    .intercept(FixedValue.value(0))
+                    .method(named("openInputStream").and(takesArguments(File.class)))
+                    .intercept(StubMethod.INSTANCE)
+                    .make();
+
+            //unloaded.saveIn(new File(path + "/hbj3/"));
+            // 类class文件加载到jvm中是不会检查头部的依赖类是否都在jvm中的，所以，这里可能会报错，找不到FileExistsException类或者其他依赖包
+            // 因此，需要将compound的依赖通过自定义类加载器进行加载
+            // 以下写法肯定会报错，不管用哪种类加载器，因为指定了第一个类加载器（appClassLoader）是加载不到FileUtils里依赖的其他类,上面的compound主要作用是提供字节码定位功能，而不是直接加载类
+            // Class<?> loaded = unloaded.load(ClassLoader.getSystemClassLoader(), ClassLoadingStrategy.Default.INJECTION).getLoaded();
+            // 如果要正确加载，并把它的依赖类也导入，则需要使用自定义类加载器，将jar包或者依赖类，放到类加载器可扫描的位置，比如URLClassLoader
+            // 这里测试类三种类加载器
+            // INJECTION： OK
+            Class<?> loaded;
+            //loaded = unloaded.load(new URLClassLoader(new URL[]{jarFIle.toURI().toURL()}), ClassLoadingStrategy.Default.INJECTION).getLoaded();
+            // WRAPPER：ERROR(类已经加载)，要重命名一下类 named("org.apache.commons.io.FileUtils2")
+            loaded = unloaded.load(new URLClassLoader(new URL[]{jarFIle.toURI().toURL()}), ClassLoadingStrategy.Default.WRAPPER).getLoaded();
+            // CHILD_FIRST：OK
+            //loaded = unloaded.load(new URLClassLoader(new URL[]{jarFIle.toURI().toURL()}), ClassLoadingStrategy.Default.CHILD_FIRST).getLoaded();
+            System.out.println("loaded = " + loaded);
+            for (Method method : loaded.getMethods()) {
+                System.out.println("method.getName() = " + method.getName());
+            }
+
+        }
     }
 }

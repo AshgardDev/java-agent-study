@@ -1,4 +1,4 @@
-package org.example.interceptor;
+package org.example.mybatisplus.interceptor;
 
 public class SelectUserNameInterceptor1 {
 

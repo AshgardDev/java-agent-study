@@ -1,4 +1,4 @@
-package org.example.interceptor;
+package org.example.mybatisplus.interceptor;
 
 import net.bytebuddy.implementation.bind.annotation.AllArguments;
 import net.bytebuddy.implementation.bind.annotation.RuntimeType;
