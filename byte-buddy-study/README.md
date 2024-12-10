@@ -1,0 +1,3 @@
+该模块是学习bytebuddy，为agent开发作技术储备。
+
+主要看Test包中的ByteBuddyTest类，里面有详细注释。

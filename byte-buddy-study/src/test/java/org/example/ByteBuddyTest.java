@@ -1,4 +1,4 @@
-package org.example.mybatisplus;
+package org.example;
 
 import cn.hutool.core.io.FileUtil;
 import jdk.internal.org.objectweb.asm.Opcodes;
@@ -13,10 +13,10 @@ import net.bytebuddy.implementation.*;
 import net.bytebuddy.implementation.bind.annotation.Morph;
 import net.bytebuddy.matcher.ElementMatchers;
 import net.bytebuddy.pool.TypePool;
-import org.example.mybatisplus.interceptor.ConstructorInterceptor5;
-import org.example.mybatisplus.interceptor.SelectUserNameInterceptor3;
-import org.example.mybatisplus.interceptor.SelectUserNameInterceptor4;
-import org.example.mybatisplus.interceptor.StaticMethodInterceptor6;
+import org.example.interceptor.ConstructorInterceptor5;
+import org.example.interceptor.SelectUserNameInterceptor3;
+import org.example.interceptor.SelectUserNameInterceptor4;
+import org.example.interceptor.StaticMethodInterceptor6;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -33,7 +33,7 @@ public class ByteBuddyTest {
 
     // 这里不要把path设置成类路径，否则会因为ByteBuddy调用saveIn方法，将类文件保存到类路径，idea就会默认加载生成的类
     // 导致每次启动都报错 Class already exist，所以设置一个临时路径即可
-    private static String path;
+    private final static String path;
 
     static {
         // path = ByteBuddyTest.class.getProtectionDomain().getCodeSource().getLocation().getPath();
@@ -438,7 +438,7 @@ public class ByteBuddyTest {
         byte[] resolve12 = classFileLocator1.locate("java.lang.String").resolve();
         FileUtil.writeBytes(resolve12, new File(path + "/hbj/org/example/String.class"));
         try {
-            Class<?> loadedCls = Class.forName("org.example.mybatisplus.ByteBuddyDemoService");
+            Class<?> loadedCls = Class.forName("org.example.ByteBuddyDemoService");
             System.out.println("类加载到了，我真是个小聪明：" + loadedCls);
 
             Class<?> loadedCls2 = Class.forName("java.lang.String");

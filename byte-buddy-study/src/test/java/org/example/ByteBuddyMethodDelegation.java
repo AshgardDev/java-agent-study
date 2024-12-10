@@ -1,4 +1,4 @@
-package org.example.mybatisplus;
+package org.example;
 
 import net.bytebuddy.implementation.bind.annotation.RuntimeType;
 

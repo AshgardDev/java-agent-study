@@ -1,9 +1,9 @@
-package org.example.mybatisplus.interceptor;
+package org.example.interceptor;
 
 import net.bytebuddy.implementation.bind.annotation.AllArguments;
 import net.bytebuddy.implementation.bind.annotation.Morph;
 import net.bytebuddy.implementation.bind.annotation.RuntimeType;
-import org.example.mybatisplus.OverrideCallback;
+import org.example.OverrideCallback;
 
 import java.util.Arrays;
 
