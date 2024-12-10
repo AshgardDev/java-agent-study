@@ -9,11 +9,14 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>agent-plugins</artifactId>
+    <artifactId>apm-sniffer</artifactId>
     <packaging>pom</packaging>
     <modules>
-        <module>springmvc-plugin</module>
-        <module>sqlite3-plugin</module>
+        <module>apm-agent</module>
+        <module>apm-agent-core</module>
+        <module>apm-plugins</module>
+        <module>apm-plugins/apm-springmvc-plugin</module>
+        <module>apm-plugins/apm-sqlite3-plugin</module>
     </modules>
 
     <properties>

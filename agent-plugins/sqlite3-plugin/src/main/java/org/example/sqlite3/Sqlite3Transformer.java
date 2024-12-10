@@ -1,4 +1,4 @@
-package org.example.mybatisplus;
+package org.example.sqlite3;
 
 import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.agent.builder.AgentBuilder;
@@ -12,11 +12,11 @@ import java.security.ProtectionDomain;
 import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
 
 @Slf4j
-public class MybatisPlusTransformer implements AgentBuilder.Transformer {
+public class Sqlite3Transformer implements AgentBuilder.Transformer {
 
     @Override
     public DynamicType.Builder<?> transform(DynamicType.Builder<?> builder, TypeDescription typeDescription, ClassLoader classLoader, JavaModule javaModule, ProtectionDomain protectionDomain) {
         log.info("匹配到要进行转换的类:{}", typeDescription.getName());
-        return builder.method(nameStartsWith("exec")).intercept(MethodDelegation.to(new MybatisPlusInterceptor()));
+        return builder.method(nameStartsWith("exec")).intercept(MethodDelegation.to(new Sqlite3Interceptor()));
     }
 }

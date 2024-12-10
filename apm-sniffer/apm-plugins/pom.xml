@@ -5,16 +5,12 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.example</groupId>
-        <artifactId>java-agent-study</artifactId>
+        <artifactId>apm-sniffer</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>agent-plugins</artifactId>
+    <artifactId>apm-plugins</artifactId>
     <packaging>pom</packaging>
-    <modules>
-        <module>springmvc-plugin</module>
-        <module>sqlite3-plugin</module>
-    </modules>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
@@ -22,4 +18,13 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
+    <dependencies>
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>apm-agent-core</artifactId>
+            <version>${project.version}</version>
+            <!-- core模块在编译时需要，但运行时由环境提供即可，因为apm-agent已经包含了core模块了，所以这里使用provided -->
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
 </project>
