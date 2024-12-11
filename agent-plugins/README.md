@@ -20,4 +20,6 @@
 
 当插件非常多的时候，配置多个agent就比较麻烦了，而且每个插件引入的jar包差不都，且都是一个fat包，体积非常大，怎么办？
 
-## apm-sniffer模拟SkyWalking agent可插拔式架构实现
+## 模拟SkyWalking agent可插拔式架构实现 apm-sniffer -- 新建一个仓库apm-sniffer，重新实现一个agent，解决类加载问题和多agent问题。
+
+新仓库apm-sniffer

@@ -15,7 +15,6 @@
         <module>byte-buddy-study</module>
         <module>app</module>
         <module>agent-plugins</module>
-        <module>apm-sniffer</module>
     </modules>
 
     <dependencies>

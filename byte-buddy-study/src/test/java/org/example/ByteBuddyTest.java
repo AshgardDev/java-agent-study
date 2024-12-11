@@ -1,7 +1,6 @@
 package org.example;
 
 import cn.hutool.core.io.FileUtil;
-import jdk.internal.org.objectweb.asm.Opcodes;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.ClassFileVersion;
 import net.bytebuddy.description.modifier.Visibility;
@@ -29,6 +28,11 @@ import java.net.URLClassLoader;
 
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
+/**
+ * 学习bytebuddy
+ * 文章： https://www.cnblogs.com/crazymakercircle/p/16635330.html#autoid-h2-12-3-0
+ * 视频：https://www.bilibili.com/video/BV1G24y1a7bd?spm_id_from=333.788.player.switch&vd_source=bd99477a13c4939885a67f476eed959a&p=11
+ */
 public class ByteBuddyTest {
 
     // 这里不要把path设置成类路径，否则会因为ByteBuddy调用saveIn方法，将类文件保存到类路径，idea就会默认加载生成的类
@@ -217,7 +221,7 @@ public class ByteBuddyTest {
                 // 创建一个实例字段,这个方法的value是不会真正生效的，因为对象实例的属性赋值动作，其实是在对象建立后，才会设置到对象上的
                 // 普通对象实例的field，是没办法直接设置的，但也有解决办法，就是通过构造函数来设置
                 // 创建一个字段，并设置初始值， --不会生效
-                .defineField("newField", String.class, Opcodes.ACC_PUBLIC)
+                .defineField("newField", String.class, Modifier.PUBLIC)
                 .value("newFieldValue")
 
                 // 创建一个静态字段并设置默认值 -- 会生效
